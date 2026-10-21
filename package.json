@@ -1,0 +1,19 @@
+{
+  "name": "downloadssloth",
+  "version": "1.0.0",
+  "description": "A local-first tool that tidies messy folders by suggesting clear file names and folders.",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "keywords": [
+    "local-first",
+    "folder-organizer",
+    "ollama",
+    "gemma3"
+  ],
+  "license": "MIT",
+  "dependencies": {
+    "express": "^4.21.2"
+  }
+}
