@@ -19,6 +19,7 @@
       --error-bg: #fef2f2;
       --error-border: #fee2e2;
       --warning: #b45309;
+      --warning-bg: #fdf5e7;
     }
 
     * {
@@ -36,12 +37,12 @@
       display: flex;
       flex-direction: column;
       align-items: center;
-      padding: 2.5rem 1.25rem 2rem;
+      padding: 2.5rem 1.25rem 2.5rem;
     }
 
     .container {
       width: 100%;
-      max-width: 740px;
+      max-width: 820px;
       display: flex;
       flex-direction: column;
       flex: 1;
@@ -137,20 +138,28 @@
       color: var(--text-muted);
     }
 
-    /* Main Card */
+    /* Cards */
     .card {
       background: var(--card-bg);
       border: 1px solid var(--border);
       border-radius: 12px;
       padding: 1.75rem;
       box-shadow: 0 1px 3px rgba(0, 0, 0, 0.02);
+      margin-bottom: 1.5rem;
     }
 
     .card-title {
       font-size: 1.125rem;
       font-weight: 600;
       color: var(--text);
+      margin-bottom: 0.5rem;
+    }
+
+    .section-desc {
+      color: var(--text-muted);
+      font-size: 0.875rem;
       margin-bottom: 1.25rem;
+      line-height: 1.4;
     }
 
     /* Form Styles */
@@ -177,7 +186,8 @@
       transition: border-color 0.15s ease, box-shadow 0.15s ease;
     }
 
-    .folder-input:focus {
+    .folder-input:focus,
+    .limit-input:focus {
       outline: none;
       border-color: var(--accent);
       box-shadow: 0 0 0 3px rgba(47, 93, 80, 0.12);
@@ -213,6 +223,117 @@
       color: var(--text-muted);
       font-size: 0.8125rem;
       line-height: 1.4;
+    }
+
+    /* Section 2 Controls */
+    .propose-form {
+      display: flex;
+      flex-direction: column;
+      gap: 0.75rem;
+    }
+
+    .propose-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 1rem;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 0.875rem 1rem;
+    }
+
+    .propose-label {
+      font-size: 0.9375rem;
+      font-weight: 500;
+      color: var(--text);
+    }
+
+    .propose-controls {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+    }
+
+    .limit-input {
+      width: 80px;
+      background: #ffffff;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 0.5rem 0.65rem;
+      font-size: 0.9375rem;
+      text-align: center;
+      font-variant-numeric: tabular-nums;
+      color: var(--text);
+    }
+
+    /* Progress Card */
+    .propose-progress {
+      margin-top: 1.25rem;
+      padding: 1rem 1.25rem;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+    }
+
+    .progress-top {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 0.625rem;
+    }
+
+    .progress-status-text {
+      font-size: 0.875rem;
+      font-weight: 500;
+      color: var(--text);
+    }
+
+    .cancel-btn {
+      background: #ffffff;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 0.3rem 0.75rem;
+      font-size: 0.8125rem;
+      font-weight: 500;
+      color: var(--text-muted);
+      cursor: pointer;
+      transition: all 0.15s ease;
+    }
+
+    .cancel-btn:hover {
+      color: var(--text);
+      border-color: #cbc5bb;
+    }
+
+    .progress-track {
+      height: 6px;
+      background: #e5e0d8;
+      border-radius: 9999px;
+      overflow: hidden;
+    }
+
+    .progress-fill {
+      height: 100%;
+      background: var(--accent);
+      width: 0%;
+      transition: width 0.3s ease;
+    }
+
+    /* Preview Notice */
+    .preview-notice {
+      background: var(--accent-subtle);
+      border: 1px solid #d4e2dc;
+      color: var(--accent);
+      padding: 0.65rem 0.85rem;
+      border-radius: 8px;
+      font-size: 0.8125rem;
+      font-weight: 500;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      margin-top: 1.25rem;
+      margin-bottom: 0.75rem;
     }
 
     /* Error Banner */
@@ -313,7 +434,7 @@
       white-space: nowrap;
     }
 
-    /* Files Table */
+    /* Files & Proposals Tables */
     .table-wrapper {
       max-height: 420px;
       overflow-y: auto;
@@ -345,6 +466,7 @@
       color: var(--text-muted);
       padding: 0.6rem 0.75rem;
       border-bottom: 1px solid var(--border);
+      white-space: nowrap;
     }
 
     .files-table td {
@@ -362,7 +484,7 @@
     }
 
     .col-name {
-      max-width: 280px;
+      max-width: 220px;
       overflow: hidden;
       text-overflow: ellipsis;
       white-space: nowrap;
@@ -370,8 +492,26 @@
       color: var(--text);
     }
 
-    .col-type {
+    .col-suggested {
+      font-weight: 600;
+      color: var(--accent);
       white-space: nowrap;
+      max-width: 240px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .col-folder {
+      white-space: nowrap;
+      color: var(--text);
+      font-weight: 500;
+    }
+
+    .col-why {
+      font-size: 0.8125rem;
+      color: var(--text-muted);
+      max-width: 260px;
+      line-height: 1.4;
     }
 
     .type-badge {
@@ -391,18 +531,39 @@
     .type-badge.archive { background: #f6edf5; color: #6d2867; }
     .type-badge.installer { background: #fdf5e7; color: #84530d; }
 
-    .col-size {
-      text-align: right;
-      color: var(--text-muted);
-      font-variant-numeric: tabular-nums;
-      white-space: nowrap;
+    /* Confidence Badges */
+    .confidence-badge {
+      display: inline-block;
+      padding: 0.15rem 0.5rem;
+      border-radius: 9999px;
+      font-size: 0.75rem;
+      font-weight: 500;
+      text-transform: capitalize;
     }
 
-    .col-date {
-      text-align: right;
+    .confidence-badge.high {
+      background: #e8f2ee;
+      color: #1c5243;
+    }
+
+    .confidence-badge.medium {
+      background: var(--warning-bg);
+      color: var(--warning);
+    }
+
+    .confidence-badge.low {
+      background: #f0ece4;
+      color: #6e6b65;
+    }
+
+    /* Mute low-confidence rows */
+    tr.row-low-confidence {
+      opacity: 0.6;
+    }
+
+    tr.row-low-confidence td.col-suggested {
       color: var(--text-muted);
-      font-variant-numeric: tabular-nums;
-      white-space: nowrap;
+      font-weight: 500;
     }
 
     /* Footer */
@@ -420,15 +581,19 @@
       margin-right: 0.25rem;
     }
 
-    @media (max-width: 600px) {
-      .input-row {
+    @media (max-width: 640px) {
+      .input-row, .propose-row {
         flex-direction: column;
+        align-items: stretch;
+      }
+      .propose-controls {
+        justify-content: space-between;
       }
       .scan-btn {
         width: 100%;
       }
-      .col-name {
-        max-width: 160px;
+      .col-name, .col-suggested, .col-why {
+        max-width: 140px;
       }
     }
   </style>
@@ -450,8 +615,9 @@
       <p class="subtitle">Tidy a messy folder without lifting a finger. Runs on your own computer.</p>
     </header>
 
-    <!-- Main Card -->
+    <!-- Main Content -->
     <main>
+      <!-- Section 1: Choose a folder -->
       <div class="card">
         <h2 class="card-title">1. Choose a folder</h2>
         
@@ -493,7 +659,7 @@
           <p class="empty-sub">This folder has no top-level non-hidden files to organize.</p>
         </div>
 
-        <!-- Results Area -->
+        <!-- Scan Results Area -->
         <div id="scan-results" class="scan-results" style="display: none;">
           <div class="results-header">
             <div id="summary-line" class="summary-line"></div>
@@ -516,6 +682,78 @@
         </div>
 
       </div>
+
+      <!-- Section 2: Get suggestions -->
+      <div id="section-propose" class="card" style="display: none;">
+        <h2 class="card-title">2. Get suggestions</h2>
+        <p class="section-desc">Gemma inspects each file name (and downscaled previews for images) to propose descriptive names and organized folders.</p>
+
+        <form id="propose-form" class="propose-form">
+          <div class="propose-row">
+            <label for="limit-input" class="propose-label">How many files? (the first N)</label>
+            <div class="propose-controls">
+              <input
+                type="number"
+                id="limit-input"
+                class="limit-input"
+                value="12"
+                min="1"
+                max="60"
+                required
+              />
+              <button type="submit" id="propose-btn" class="scan-btn">Suggest names</button>
+            </div>
+          </div>
+        </form>
+
+        <!-- Propose Progress Bar -->
+        <div id="propose-progress" class="propose-progress" style="display: none;">
+          <div class="progress-top">
+            <span id="progress-status-text" class="progress-status-text">Reading file 1 of 12...</span>
+            <button type="button" id="cancel-propose-btn" class="cancel-btn">Cancel</button>
+          </div>
+          <div class="progress-track">
+            <div id="progress-fill" class="progress-fill" style="width: 0%;"></div>
+          </div>
+        </div>
+
+        <!-- Propose Error Banner -->
+        <div id="propose-error" class="error-banner" style="display: none;" role="alert">
+          <svg class="error-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <circle cx="12" cy="12" r="10"></circle>
+            <line x1="12" y1="8" x2="12" y2="12"></line>
+            <line x1="12" y1="16" x2="12.01" y2="16"></line>
+          </svg>
+          <span id="propose-error-text"></span>
+        </div>
+
+        <!-- Proposals Results Table -->
+        <div id="propose-results" class="propose-results" style="display: none;">
+          <div class="preview-notice">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <circle cx="12" cy="12" r="10"></circle>
+              <line x1="12" y1="8" x2="12" y2="12"></line>
+              <line x1="12" y1="16" x2="12.01" y2="16"></line>
+            </svg>
+            <span>This is a preview. Nothing has been changed.</span>
+          </div>
+
+          <div class="table-wrapper">
+            <table class="files-table">
+              <thead>
+                <tr>
+                  <th scope="col">Original name</th>
+                  <th scope="col">Suggested name</th>
+                  <th scope="col">Folder</th>
+                  <th scope="col">Confidence</th>
+                  <th scope="col">Why</th>
+                </tr>
+              </thead>
+              <tbody id="proposals-tbody"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
     </main>
 
     <!-- Footer -->
@@ -529,12 +767,17 @@
   </div>
 
   <script>
+    // State
+    let currentScannedFolder = '';
+    let currentJobId = null;
+    let pollInterval = null;
+
     // Status Pill Elements
     const statusDot = document.getElementById('status-dot');
     const statusText = document.getElementById('status-text');
     const recheckBtn = document.getElementById('recheck-btn');
 
-    // Folder Scan Elements
+    // Section 1: Folder Scan Elements
     const scanForm = document.getElementById('scan-form');
     const folderInput = document.getElementById('folder-input');
     const scanBtn = document.getElementById('scan-btn');
@@ -546,6 +789,20 @@
     const summaryLine = document.getElementById('summary-line');
     const folderPathDisplay = document.getElementById('folder-path-display');
     const filesTbody = document.getElementById('files-tbody');
+
+    // Section 2: Propose Elements
+    const sectionPropose = document.getElementById('section-propose');
+    const proposeForm = document.getElementById('propose-form');
+    const limitInput = document.getElementById('limit-input');
+    const proposeBtn = document.getElementById('propose-btn');
+    const proposeProgress = document.getElementById('propose-progress');
+    const progressStatusText = document.getElementById('progress-status-text');
+    const progressFill = document.getElementById('progress-fill');
+    const cancelProposeBtn = document.getElementById('cancel-propose-btn');
+    const proposeError = document.getElementById('propose-error');
+    const proposeErrorText = document.getElementById('propose-error-text');
+    const proposeResults = document.getElementById('propose-results');
+    const proposalsTbody = document.getElementById('proposals-tbody');
 
     // Health Check Logic
     async function checkHealth() {
@@ -564,7 +821,7 @@
           statusDot.className = 'status-dot error';
           statusText.textContent = data.error || 'Model not available';
         }
-      } catch (err) {
+      } catch {
         statusDot.className = 'status-dot error';
         statusText.textContent = 'Ollama unavailable';
       } finally {
@@ -572,11 +829,9 @@
       }
     }
 
-    recheckBtn.addEventListener('click', () => {
-      checkHealth();
-    });
+    recheckBtn.addEventListener('click', checkHealth);
 
-    // Formatting Helpers
+    // Helpers
     function formatBytes(bytes) {
       if (!bytes || bytes === 0) return '0 B';
       const k = 1024;
@@ -630,31 +885,33 @@
     }
 
     function escapeHtml(str) {
+      if (!str) return '';
       const div = document.createElement('div');
       div.textContent = str;
       return div.innerHTML;
     }
 
-    // Folder Scan Handler
+    // Section 1: Scan Folder
     scanForm.addEventListener('submit', async (e) => {
       e.preventDefault();
 
       const folderPath = folderInput.value.trim();
       if (!folderPath) return;
 
-      // Reset UI state
+      // Reset states
       scanError.style.display = 'none';
       scanResults.style.display = 'none';
       scanEmpty.style.display = 'none';
+      sectionPropose.style.display = 'none';
+      proposeResults.style.display = 'none';
+      proposeError.style.display = 'none';
       scanLoading.style.display = 'flex';
       scanBtn.disabled = true;
 
       try {
         const response = await fetch('/api/scan', {
           method: 'POST',
-          headers: {
-            'Content-Type': 'application/json'
-          },
+          headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ folder: folderPath })
         });
 
@@ -666,31 +923,30 @@
           return;
         }
 
-        // Handle empty folder
         if (!data.files || data.files.length === 0) {
           scanEmpty.style.display = 'block';
           return;
         }
 
-        // Render results
+        currentScannedFolder = data.folder;
         summaryLine.textContent = formatSummary(data.summary);
         folderPathDisplay.textContent = data.folder;
 
-        filesTbody.innerHTML = data.files.map((file) => {
-          const extLabel = file.extension ? `.${escapeHtml(file.extension)}` : '';
-          const typeBadge = `<span class="type-badge ${escapeHtml(file.category)}">${escapeHtml(file.category)}</span>`;
-
-          return `
-            <tr>
-              <td class="col-name" title="${escapeHtml(file.name)}">${escapeHtml(file.name)}</td>
-              <td class="col-type">${typeBadge}</td>
-              <td class="col-size">${formatBytes(file.size)}</td>
-              <td class="col-date">${formatShortDate(file.modified)}</td>
-            </tr>
-          `;
-        }).join('');
+        filesTbody.innerHTML = data.files.map((file) => `
+          <tr>
+            <td class="col-name" title="${escapeHtml(file.name)}">${escapeHtml(file.name)}</td>
+            <td class="col-type"><span class="type-badge ${escapeHtml(file.category)}">${escapeHtml(file.category)}</span></td>
+            <td style="text-align: right; color: var(--text-muted); font-variant-numeric: tabular-nums;">${formatBytes(file.size)}</td>
+            <td style="text-align: right; color: var(--text-muted); font-variant-numeric: tabular-nums;">${formatShortDate(file.modified)}</td>
+          </tr>
+        `).join('');
 
         scanResults.style.display = 'block';
+
+        // Reveal Section 2 and calibrate limit input
+        sectionPropose.style.display = 'block';
+        limitInput.value = Math.min(12, data.files.length);
+        limitInput.max = Math.min(60, data.files.length);
       } catch (err) {
         scanErrorText.textContent = 'Could not communicate with the local server: ' + err.message;
         scanError.style.display = 'flex';
@@ -700,9 +956,144 @@
       }
     });
 
-    document.addEventListener('DOMContentLoaded', () => {
-      checkHealth();
+    // Render Proposal Table
+    function renderProposals(results) {
+      if (!results || results.length === 0) return;
+
+      proposalsTbody.innerHTML = results.map((item) => {
+        const isLow = item.confidence === 'low';
+        const rowClass = isLow ? 'row-low-confidence' : '';
+        const badgeClass = item.confidence || 'low';
+
+        return `
+          <tr class="${rowClass}">
+            <td class="col-name" title="${escapeHtml(item.original_name)}">${escapeHtml(item.original_name)}</td>
+            <td class="col-suggested" title="${escapeHtml(item.suggested_name)}">${escapeHtml(item.suggested_name)}</td>
+            <td class="col-folder">${escapeHtml(item.folder)}</td>
+            <td><span class="confidence-badge ${badgeClass}">${escapeHtml(item.confidence)}</span></td>
+            <td class="col-why" title="${escapeHtml(item.reason)}">${escapeHtml(item.reason)}</td>
+          </tr>
+        `;
+      }).join('');
+
+      proposeResults.style.display = 'block';
+    }
+
+    // Stop Polling helper
+    function stopPolling() {
+      if (pollInterval) {
+        clearInterval(pollInterval);
+        pollInterval = null;
+      }
+      proposeBtn.disabled = false;
+      proposeProgress.style.display = 'none';
+    }
+
+    // Section 2: Propose Names
+    proposeForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
+
+      if (!currentScannedFolder) {
+        proposeErrorText.textContent = 'Please scan a folder first.';
+        proposeError.style.display = 'flex';
+        return;
+      }
+
+      const limit = parseInt(limitInput.value, 10) || 12;
+
+      // Reset state
+      proposeError.style.display = 'none';
+      proposeResults.style.display = 'none';
+      proposeProgress.style.display = 'block';
+      proposeBtn.disabled = true;
+      progressFill.style.width = '0%';
+      progressStatusText.textContent = `Starting analysis (0 of ${limit})...`;
+
+      try {
+        const response = await fetch('/api/propose', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            folder: currentScannedFolder,
+            limit
+          })
+        });
+
+        const data = await response.json();
+
+        if (!response.ok || !data.ok) {
+          proposeErrorText.textContent = data.error || 'Failed to start proposal job.';
+          proposeError.style.display = 'flex';
+          stopPolling();
+          return;
+        }
+
+        currentJobId = data.jobId;
+
+        // Poll every 1 second
+        pollInterval = setInterval(async () => {
+          try {
+            const pollRes = await fetch(`/api/propose/${currentJobId}`);
+            const jobData = await pollRes.json();
+
+            if (!pollRes.ok || !jobData.ok) {
+              proposeErrorText.textContent = jobData.error || 'Job tracking error.';
+              proposeError.style.display = 'flex';
+              stopPolling();
+              return;
+            }
+
+            const total = jobData.total || limit;
+            const done = jobData.done || 0;
+            const pct = total > 0 ? Math.round((done / total) * 100) : 0;
+            progressFill.style.width = `${pct}%`;
+
+            if (jobData.status === 'running') {
+              const currentNum = Math.min(done + 1, total);
+              progressStatusText.textContent = `Reading file ${currentNum} of ${total}...`;
+            } else if (jobData.status === 'done') {
+              stopPolling();
+              renderProposals(jobData.results);
+            } else if (jobData.status === 'cancelled') {
+              stopPolling();
+              if (jobData.results && jobData.results.length > 0) {
+                renderProposals(jobData.results);
+              }
+            } else if (jobData.status === 'error') {
+              proposeErrorText.textContent = jobData.error || 'Proposal analysis failed.';
+              proposeError.style.display = 'flex';
+              stopPolling();
+            }
+          } catch (pollErr) {
+            proposeErrorText.textContent = 'Error polling job status: ' + pollErr.message;
+            proposeError.style.display = 'flex';
+            stopPolling();
+          }
+        }, 1000);
+
+      } catch (err) {
+        proposeErrorText.textContent = 'Could not start proposal job: ' + err.message;
+        proposeError.style.display = 'flex';
+        stopPolling();
+      }
     });
+
+    // Cancel Button
+    cancelProposeBtn.addEventListener('click', async () => {
+      if (!currentJobId) return;
+
+      cancelProposeBtn.disabled = true;
+      try {
+        await fetch(`/api/propose/${currentJobId}/cancel`, { method: 'POST' });
+      } catch {
+        // Ignore network errors on cancel
+      } finally {
+        cancelProposeBtn.disabled = false;
+        stopPolling();
+      }
+    });
+
+    document.addEventListener('DOMContentLoaded', checkHealth);
   </script>
 </body>
 </html>
