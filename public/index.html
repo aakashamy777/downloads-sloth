@@ -496,7 +496,7 @@
       font-weight: 600;
       color: var(--accent);
       white-space: nowrap;
-      max-width: 240px;
+      max-width: 250px;
       overflow: hidden;
       text-overflow: ellipsis;
     }
@@ -554,6 +554,21 @@
     .confidence-badge.low {
       background: #f0ece4;
       color: #6e6b65;
+    }
+
+    /* Kept name marker */
+    .kept-badge {
+      display: inline-block;
+      font-size: 0.6875rem;
+      font-weight: 500;
+      text-transform: uppercase;
+      letter-spacing: 0.03em;
+      padding: 0.1rem 0.35rem;
+      border-radius: 4px;
+      background: #f0ece4;
+      color: var(--text-muted);
+      margin-left: 0.35rem;
+      vertical-align: 1px;
     }
 
     /* Mute low-confidence rows */
@@ -964,11 +979,14 @@
         const isLow = item.confidence === 'low';
         const rowClass = isLow ? 'row-low-confidence' : '';
         const badgeClass = item.confidence || 'low';
+        const keptMarker = item.name_kept ? '<span class="kept-badge">kept</span>' : '';
 
         return `
           <tr class="${rowClass}">
             <td class="col-name" title="${escapeHtml(item.original_name)}">${escapeHtml(item.original_name)}</td>
-            <td class="col-suggested" title="${escapeHtml(item.suggested_name)}">${escapeHtml(item.suggested_name)}</td>
+            <td class="col-suggested" title="${escapeHtml(item.suggested_name)}">
+              ${escapeHtml(item.suggested_name)} ${keptMarker}
+            </td>
             <td class="col-folder">${escapeHtml(item.folder)}</td>
             <td><span class="confidence-badge ${badgeClass}">${escapeHtml(item.confidence)}</span></td>
             <td class="col-why" title="${escapeHtml(item.reason)}">${escapeHtml(item.reason)}</td>
