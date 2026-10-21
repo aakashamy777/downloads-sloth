@@ -215,6 +215,190 @@ async function validateAndScanFolder(folder) {
   };
 }
 
+// Determines if a filename is meaningless/generic and needs renaming
+function isMeaninglessName(rawBaseName) {
+  if (!rawBaseName || typeof rawBaseName !== 'string') return true;
+  const base = rawBaseName.trim();
+
+  // Anything under 4 letters
+  if (base.length < 4) return true;
+
+  const lower = base.toLowerCase();
+
+  // Camera / phone / scanner presets
+  if (/^img[-_]?\d+/i.test(lower)) return true;
+  if (/^img[-_]?\d+[-_]?wa\d+/i.test(lower)) return true;
+  if (/^dsc[-_]?\d+/i.test(lower)) return true;
+  if (/^pxl[-_]?\d+/i.test(lower)) return true;
+  if (/^whatsapp\s+(image|video)/i.test(lower)) return true;
+  if (/^screen\s*shot/i.test(lower)) return true;
+  if (/^screenshot/i.test(lower)) return true;
+  if (/^scan[-_]?\d+/i.test(lower)) return true;
+  if (lower === 'scan') return true;
+
+  // Generic document / download / copy patterns
+  if (/^untitled(\s+document)?(\s*[\(_-]?\d+[\)]?)?$/i.test(lower)) return true;
+  if (/^document(\s*[\(_-]?\d+[\)]?)?$/i.test(lower)) return true;
+  if (/^download(s)?(\s*[\(_-]?\d+[\)]?)?$/i.test(lower)) return true;
+  if (/^file(\s*[\(_-]?\d+[\)]?)?$/i.test(lower)) return true;
+  if (/^copy\s+of\s+/i.test(lower)) return true;
+
+  // Long run of digits (e.g. timestamps, sequence numbers)
+  if (/^\d{6,}$/.test(base)) return true;
+  if (/^[\d-_]{8,}$/.test(base) && !/[a-zA-Z]/.test(base)) return true;
+
+  // Hex or hash-like strings (at least 10 hex characters)
+  if (/^[0-9a-fA-F]{10,}$/.test(base)) return true;
+
+  // UUID strings
+  if (/^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/i.test(base)) return true;
+
+  // Random alphanumeric string with no vowels or spaces (min length 7)
+  if (base.length >= 7 && !/[\saeiouy]/i.test(base)) return true;
+
+  return false;
+}
+
+// Determines folder for files whose name is already clear (category + keyword based default)
+function assignFolderForClearFile(file) {
+  const normalized = file.name.toLowerCase().replace(/[^a-z0-9]+/g, ' ');
+
+  // Keyword-based classification
+  if (/\b(receipt|receipts|bill|bills|invoice|invoices|tax|taxes|statement|statements|payment|fee|utility|utilities|payroll)\b/i.test(normalized)) {
+    return 'Receipts and Bills';
+  }
+  if (/\b(ticket|tickets|boarding|flight|flights|hotel|hotels|airbnb|passport|visa|itinerary|trip|travel|vacation)\b/i.test(normalized)) {
+    return 'Travel';
+  }
+  if (/\b(syllabus|lecture|lectures|assignment|assignments|homework|essay|essays|exam|exams|thesis|course|quiz|study|studies|chapter)\b/i.test(normalized)) {
+    return 'Study';
+  }
+  if (/\b(meeting|meetings|contract|contracts|resume|cv|client|clients|project|deck|presentation|roadmap|specs|spec|brief|work)\b/i.test(normalized)) {
+    return 'Work';
+  }
+  if (/\b(screenshot|screenshots|screengrab)\b/i.test(normalized)) {
+    return 'Screenshots';
+  }
+  if (/\b(budget|finances|financial|spreadsheet|spreadsheets|ledger|metrics|dataset|data|inventory)\b/i.test(normalized)) {
+    return 'Spreadsheets and Data';
+  }
+  if (/\b(photo|photos|portrait|selfie|family)\b/i.test(normalized)) {
+    return 'Photos';
+  }
+
+  // Category fallback
+  switch (file.category) {
+    case 'spreadsheet':
+      return 'Spreadsheets and Data';
+    case 'pdf':
+    case 'document':
+      return 'Documents';
+    case 'image':
+      return 'Photos';
+    case 'archive':
+      return 'Documents';
+    case 'installer':
+      return 'Work';
+    default:
+      if (['js', 'ts', 'json', 'py', 'go', 'rs', 'c', 'cpp', 'h', 'css', 'html', 'sh', 'yml', 'yaml', 'md'].includes(file.extension)) {
+        return 'Work';
+      }
+      return 'Review';
+  }
+}
+
+// Generic words that must never comprise the entire suggested name or description
+const GENERIC_NAME_WORDS = new Set([
+  'pdf',
+  'document',
+  'documents',
+  'file',
+  'files',
+  'image',
+  'images',
+  'photo',
+  'photos',
+  'scene',
+  'scenes',
+  'portrait',
+  'portraits'
+]);
+
+// Checks if a candidate name or description consists only of generic words or file extension
+function isOnlyGenericWordsOrExtension(name, ext) {
+  if (!name || typeof name !== 'string') return true;
+
+  // Strip leading date YYYY-MM-DD or YYYYMMDD or YYYY_MM_DD, and leading screenshot prefix
+  let stripped = name
+    .toLowerCase()
+    .replace(/^\d{4}[-_]?\d{2}[-_]?\d{2}[-_]*/, '')
+    .replace(/^screenshot[-_]*/i, '')
+    .replace(/^[-_]+|[-_]+$/g, '');
+
+  if (!stripped) return true;
+
+  const tokens = stripped.split(/[-_]+/).filter(Boolean);
+  if (tokens.length === 0) return true;
+
+  const extLower = (ext || '').toLowerCase().replace(/^\./, '');
+
+  return tokens.every(
+    (token) =>
+      GENERIC_NAME_WORDS.has(token) ||
+      (extLower && token === extLower) ||
+      /^\d+$/.test(token)
+  );
+}
+
+// Extracts YYYY-MM-DD, YYYY_MM_DD, or YYYYMMDD from filename
+function extractDateFromFileName(fileName) {
+  if (!fileName || typeof fileName !== 'string') return null;
+
+  // 1. YYYY-MM-DD
+  const m1 = fileName.match(/(?:^|[^0-9])(19\d\d|20\d\d)-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])(?:[^0-9]|$)/);
+  if (m1) {
+    return `${m1[1]}-${m1[2]}-${m1[3]}`;
+  }
+
+  // 2. YYYY_MM_DD
+  const m2 = fileName.match(/(?:^|[^0-9])(19\d\d|20\d\d)_(0[1-9]|1[0-2])_(0[1-9]|[12]\d|3[01])(?:[^0-9]|$)/);
+  if (m2) {
+    return `${m2[1]}-${m2[2]}-${m2[3]}`;
+  }
+
+  // 3. YYYYMMDD (with optional trailing timestamp digits)
+  const m3 = fileName.match(/(?:^|[^0-9])(19\d\d|20\d\d)(0[1-9]|1[0-2])(0[1-9]|[12]\d|3[01])(?:\d{4}|\d{6})?(?:[^0-9]|$)/);
+  if (m3) {
+    return `${m3[1]}-${m3[2]}-${m3[3]}`;
+  }
+
+  return null;
+}
+
+// Converts a Date to YYYY-MM-DD in the system's local timezone (not UTC)
+function formatLocalDate(dateObj) {
+  const d = dateObj instanceof Date && !isNaN(dateObj.getTime()) ? dateObj : new Date();
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+// Builds target YYYY-MM-DD date: extracted date from filename if present, else local modified date
+function extractTargetDate(fileName, modifiedDate) {
+  const fromName = extractDateFromFileName(fileName);
+  if (fromName) return fromName;
+
+  if (modifiedDate) {
+    const d = new Date(modifiedDate);
+    if (!isNaN(d.getTime())) {
+      return formatLocalDate(d);
+    }
+  }
+
+  return formatLocalDate(new Date());
+}
+
 // Sanitizes base filename to: lowercase, [a-z0-9_-], no slashes/dots, max 60 chars, never empty
 function sanitizeBaseName(rawName, fallbackBaseName) {
   if (typeof rawName !== 'string') rawName = '';
@@ -255,22 +439,38 @@ function enforceFolder(rawFolder) {
   return matched || 'Review';
 }
 
-// Enforces confidence to 'high', 'medium', or 'low'
-function enforceConfidence(rawConfidence) {
-  if (typeof rawConfidence !== 'string') return 'low';
-  const val = rawConfidence.trim().toLowerCase();
-  if (val === 'high' || val === 'medium' || val === 'low') {
-    return val;
+// Evaluates and caps confidence in code (never trusting model blindly)
+function capConfidence({ rawConfidence, isImage, reason, isMeaningless }) {
+  const normConf = typeof rawConfidence === 'string' ? rawConfidence.trim().toLowerCase() : 'low';
+
+  if (!isImage) {
+    // For non-images, confidence may be "medium" at most, and "low" if the file name is generic
+    if (isMeaningless) {
+      return 'low';
+    }
+    return normConf === 'high' || normConf === 'medium' ? 'medium' : 'low';
   }
+
+  // For images, "high" is allowed only if the reason mentions text or an object that is clearly visible
+  if (normConf === 'high') {
+    const reasonText = (reason || '').toLowerCase();
+    const hasVisibleOrText =
+      /\b(text|written|words|labeled|titled|sign|headline|reads)\b/i.test(reasonText) ||
+      (/\b(visible|clearly|depicts|shows|displays|contains)\b/i.test(reasonText) &&
+       /\b(receipt|invoice|bill|document|screenshot|photo|person|group|portrait|car|dog|cat|building|landscape|chart|table|logo|screen|interface|diagram|editor|code|terminal|browser|window|app|website|page)\b/i.test(reasonText));
+
+    if (hasVisibleOrText) {
+      return 'high';
+    }
+    return 'medium';
+  }
+
+  if (normConf === 'medium') return 'medium';
   return 'low';
 }
 
 // Builds the Ollama prompt for Gemma 3 4B
-function buildOllamaPrompt({ fileName, baseName, ext, modifiedDate, hasImage }) {
-  const dateStr = modifiedDate
-    ? modifiedDate.split('T')[0]
-    : new Date().toISOString().split('T')[0];
-
+function buildOllamaPrompt({ fileName, baseName, ext, targetDate, hasImage, isScreenshot }) {
   return `You are a local file organization assistant.
 Analyze this file and propose a short, descriptive file name and select an appropriate destination folder.
 
@@ -278,11 +478,13 @@ File Information:
 - Current filename: "${fileName}"
 - Base name: "${baseName}"
 - Extension: "${ext || '(none)'}"
-- Modified date: "${dateStr}"
+- Date: "${targetDate}"
 ${
-  hasImage
-    ? '- An image preview of this file is attached.'
-    : '- Non-image file: analyze ONLY the file name, extension, and modified date. Do NOT read or invent unseen contents.'
+  isScreenshot
+    ? '- This file is a SCREENSHOT image.'
+    : hasImage
+      ? '- An image preview of this file is attached.'
+      : '- Non-image file.'
 }
 
 Allowed Folders (choose exactly ONE from this list):
@@ -297,14 +499,23 @@ Allowed Folders (choose exactly ONE from this list):
 - Review
 
 Rules:
-1. "new_name": Short descriptive filename WITHOUT extension. Use lowercase words joined by hyphens. Must start with a date in YYYY-MM-DD format (use the date visible in the image if there is one, otherwise use "${dateStr}"). Example: "2026-10-21-utility-bill".
-2. "folder": Must be one of the Allowed Folders listed above.
-3. Describe ONLY what is visible in the image or implied by the file name. Do not invent names, amounts, places, or facts.
-4. If you cannot tell what a file is, keep the original base name "${baseName}", set folder to "Review", and confidence to "low".
-5. Return ONLY a single JSON object with this exact structure:
+1. "new_name": Short descriptive filename WITHOUT extension. Use lowercase words joined by hyphens.
+${
+  isScreenshot
+    ? `Must start with "screenshot-${targetDate}-" followed by a short description of what application, website, code, or interface is visible on screen (example: "screenshot-${targetDate}-code-editor"). NEVER describe a screenshot as a "portrait" or "photo".`
+    : `Must start with the date "${targetDate}-" followed by a short description of the subject. Example: "${targetDate}-utility-bill".`
+}
+2. "folder": ${isScreenshot ? 'Must be "Screenshots".' : 'Must be one of the Allowed Folders listed above.'}
+3. Describe ONLY what is visible in the image. Do not invent names, amounts, places, or facts.
+4. Image Privacy & Accuracy Rules:
+   - Do not identify real people by their face, and do not name actors, celebrities or characters; describe the scene generically.
+   - Do not guess brands or places unless the text is visible in the image.
+   ${isScreenshot ? '- Never describe a screenshot as a "portrait" or "photo".' : ''}
+5. Never produce names made only of the extension or generic words (pdf, document, file, image, photo, scene, portrait).
+6. Return ONLY a single JSON object with this exact structure:
 {
-  "new_name": "YYYY-MM-DD-short-description",
-  "folder": "Documents",
+  "new_name": "${isScreenshot ? `screenshot-${targetDate}-short-description` : `${targetDate}-short-description`}",
+  "folder": "${isScreenshot ? 'Screenshots' : 'Photos'}",
   "reason": "One short sentence explaining why.",
   "confidence": "high"
 }
@@ -312,10 +523,9 @@ Valid confidence values are "high", "medium", or "low".`;
 }
 
 // Calls Ollama with one retry if JSON parsing fails
-async function getSuggestionFromOllama(file, resolvedFolderPath) {
+async function getSuggestionFromOllama(file, resolvedFolderPath, { isScreenshot, targetDate }) {
   const originalBase = path.parse(file.name).name;
   const ext = file.extension;
-  const modifiedDate = file.modified;
   const isImage = file.category === 'image';
 
   let base64Image = null;
@@ -355,8 +565,9 @@ async function getSuggestionFromOllama(file, resolvedFolderPath) {
     fileName: file.name,
     baseName: originalBase,
     ext,
-    modifiedDate,
-    hasImage: !!base64Image
+    targetDate,
+    hasImage: !!base64Image,
+    isScreenshot
   });
 
   // Attempt up to 2 times (initial attempt + 1 retry on invalid JSON)
@@ -405,8 +616,8 @@ async function getSuggestionFromOllama(file, resolvedFolderPath) {
     } catch {
       if (attempt === 2) {
         return {
-          rawName: originalBase,
-          folder: 'Review',
+          rawName: isScreenshot ? `screenshot-${targetDate}` : originalBase,
+          folder: isScreenshot ? 'Screenshots' : 'Review',
           reason: 'Could not decide',
           confidence: 'low'
         };
@@ -415,8 +626,8 @@ async function getSuggestionFromOllama(file, resolvedFolderPath) {
   }
 
   return {
-    rawName: originalBase,
-    folder: 'Review',
+    rawName: isScreenshot ? `screenshot-${targetDate}` : originalBase,
+    folder: isScreenshot ? 'Screenshots' : 'Review',
     reason: 'Could not decide',
     confidence: 'low'
   };
@@ -436,33 +647,139 @@ async function processProposeJob(job, filesToProcess) {
     job.currentFile = file.name;
 
     const originalBase = path.parse(file.name).name;
-    const rawSuggestion = await getSuggestionFromOllama(file, job.folder);
+    const isImage = file.category === 'image';
+    const isMeaningless = isMeaninglessName(originalBase);
+    const isScreenshot = /^(screenshot|screen\s*shot)/i.test(originalBase);
+    const targetDate = extractTargetDate(file.name, file.modified);
 
-    if (job.cancelled) {
-      job.status = 'cancelled';
-      break;
+    let candidateBase = '';
+    let targetFolder = '';
+    let reason = '';
+    let confidence = 'medium';
+    let nameKept = false;
+
+    if (!isMeaningless) {
+      // 1. Name is NOT meaningless: keep original name, do not add date prefix, do not call model for a new name
+      candidateBase = originalBase;
+      targetFolder = isScreenshot ? 'Screenshots' : assignFolderForClearFile(file);
+      reason = 'Name is already clear';
+      confidence = 'medium';
+      nameKept = true;
+    } else if (!isImage) {
+      // 2. Non-image files with meaningless names: cannot be understood without reading them,
+      // so do not invent a descriptive name: keep the original base name, set folder to "Review"
+      // (or "Screenshots" if original name starts with Screenshot), confidence "low", reason "Name is unclear and the content is not read"
+      candidateBase = originalBase;
+      targetFolder = isScreenshot ? 'Screenshots' : 'Review';
+      confidence = 'low';
+      reason = 'Name is unclear and the content is not read';
+      nameKept = true;
+    } else {
+      // 3. Meaningless image: call model for suggestions
+      const rawSuggestion = await getSuggestionFromOllama(file, job.folder, {
+        isScreenshot,
+        targetDate
+      });
+
+      if (job.cancelled) {
+        job.status = 'cancelled';
+        break;
+      }
+
+      if (isScreenshot) {
+        // Screenshot image: force folder to "Screenshots"
+        targetFolder = 'Screenshots';
+
+        // Extract short description from model suggestion
+        let desc = sanitizeBaseName(rawSuggestion.rawName, '')
+          .replace(/^screenshot[-_]*/i, '')
+          .replace(/^\d{4}[-_]?\d{2}[-_]?\d{2}[-_]*/, '')
+          .replace(/\b(portrait|portraits|photo|photos)\b/gi, '')
+          .replace(/-+/g, '-')
+          .replace(/^[-_]+|[-_]+$/g, '');
+
+        // Never describe a screenshot as a "portrait" or "photo" in reason
+        reason =
+          typeof rawSuggestion.reason === 'string' && rawSuggestion.reason.trim()
+            ? rawSuggestion.reason
+                .trim()
+                .replace(/\b(portrait|portraits)\b/gi, 'screenshot')
+                .replace(/\b(photo|photos)\b/gi, 'screenshot')
+            : 'Screenshot of visible screen';
+
+        // If description is empty or only generic words, try extracting descriptive words from reason
+        if (isOnlyGenericWordsOrExtension(desc, file.extension)) {
+          const reasonWords = reason
+            .toLowerCase()
+            .replace(/[^a-z0-9\s]/g, ' ')
+            .split(/\s+/)
+            .filter(
+              (w) =>
+                w.length >= 3 &&
+                !GENERIC_NAME_WORDS.has(w) &&
+                !['screenshot', 'screenshots', 'screen', 'shows', 'depicts', 'view', 'with', 'that', 'this'].includes(w)
+            );
+          if (reasonWords.length > 0) {
+            desc = reasonWords.slice(0, 3).join('-');
+          }
+        }
+
+        // If still generic or empty, use 'screen'
+        if (isOnlyGenericWordsOrExtension(desc, file.extension)) {
+          desc = 'screen';
+        }
+
+        candidateBase = `screenshot-${targetDate}-${desc}`.slice(0, 60).replace(/[-_]+$/, '');
+        confidence = capConfidence({
+          rawConfidence: rawSuggestion.confidence,
+          isImage: true,
+          reason,
+          isMeaningless: true
+        });
+        nameKept = false;
+      } else {
+        // Non-screenshot image:
+        targetFolder = enforceFolder(rawSuggestion.folder);
+
+        let desc = sanitizeBaseName(rawSuggestion.rawName, '')
+          .replace(/^\d{4}[-_]?\d{2}[-_]?\d{2}[-_]*/, '')
+          .replace(/^[-_]+|[-_]+$/g, '');
+
+        reason =
+          typeof rawSuggestion.reason === 'string' && rawSuggestion.reason.trim()
+            ? rawSuggestion.reason.trim()
+            : 'Suggested based on image analysis';
+
+        // Never produce names made only of the extension or generic words
+        if (isOnlyGenericWordsOrExtension(desc, file.extension)) {
+          candidateBase = originalBase;
+          targetFolder = 'Review';
+          confidence = 'low';
+          reason = 'Suggested name was generic';
+          nameKept = true;
+        } else {
+          candidateBase = `${targetDate}-${desc}`.slice(0, 60).replace(/[-_]+$/, '');
+          confidence = capConfidence({
+            rawConfidence: rawSuggestion.confidence,
+            isImage: true,
+            reason,
+            isMeaningless: true
+          });
+          nameKept = false;
+        }
+      }
     }
-
-    const sanitizedBase = sanitizeBaseName(rawSuggestion.rawName, originalBase);
-    const enforcedFolder = enforceFolder(rawSuggestion.folder);
-    const enforcedConfidence = enforceConfidence(rawSuggestion.confidence);
-    const reason =
-      typeof rawSuggestion.reason === 'string' && rawSuggestion.reason.trim()
-        ? rawSuggestion.reason.trim()
-        : enforcedConfidence === 'low'
-        ? 'Could not decide'
-        : 'Suggested based on file analysis';
 
     // Keep original extension (never from model)
     const extLabel = file.extension ? `.${file.extension}` : '';
 
     // Enforce uniqueness within the plan by adding -2, -3
-    let candidateBase = sanitizedBase;
-    let candidateName = candidateBase + extLabel;
+    let uniqueBase = candidateBase;
+    let candidateName = uniqueBase + extLabel;
     let counter = 2;
     while (usedPlanNames.has(candidateName.toLowerCase())) {
-      candidateBase = `${sanitizedBase}-${counter}`;
-      candidateName = candidateBase + extLabel;
+      uniqueBase = `${candidateBase}-${counter}`;
+      candidateName = uniqueBase + extLabel;
       counter++;
     }
     usedPlanNames.add(candidateName.toLowerCase());
@@ -472,9 +789,10 @@ async function processProposeJob(job, filesToProcess) {
       extension: file.extension,
       category: file.category,
       suggested_name: candidateName,
-      folder: enforcedFolder,
+      folder: targetFolder,
       reason,
-      confidence: enforcedConfidence
+      confidence,
+      name_kept: nameKept
     });
 
     job.done = i + 1;
