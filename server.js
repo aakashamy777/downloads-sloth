@@ -960,12 +960,524 @@ app.post('/api/propose/:jobId/cancel', (req, res) => {
   return res.json({ ok: true, message: 'Proposal job cancelled.' });
 });
 
+// In-memory store for apply logs metadata
+const applyRecords = new Map();
+const APPLIES_INDEX_FILE = path.join(os.tmpdir(), '.sloth-applies-index.json');
+
+async function loadApplyRecords() {
+  try {
+    if (await pathExists(APPLIES_INDEX_FILE)) {
+      const data = JSON.parse(await fs.promises.readFile(APPLIES_INDEX_FILE, 'utf8'));
+      if (Array.isArray(data)) {
+        for (const item of data) {
+          if (item && item.applyId && item.undoLogPath) {
+            applyRecords.set(item.applyId, item);
+          }
+        }
+      }
+    }
+  } catch {}
+}
+
+async function saveApplyRecord(record) {
+  applyRecords.set(record.applyId, record);
+  try {
+    await loadApplyRecords();
+    applyRecords.set(record.applyId, record);
+    const all = Array.from(applyRecords.values());
+    await fs.promises.writeFile(APPLIES_INDEX_FILE, JSON.stringify(all, null, 2), 'utf8');
+  } catch {}
+}
+
+// Helper to check file or directory existence
+async function pathExists(p) {
+  try {
+    await fs.promises.access(p);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+// Validates output folder with safety rules: absolute, inside home, not system, not hidden, not source or inside source
+async function validateOutputFolder(outputFolder, sourceResolved) {
+  if (!outputFolder || typeof outputFolder !== 'string' || !outputFolder.trim()) {
+    const err = new Error('Please enter an output folder path.');
+    err.status = 400;
+    throw err;
+  }
+
+  const trimmed = outputFolder.trim();
+
+  // Must be an absolute path
+  if (!path.isAbsolute(trimmed)) {
+    const err = new Error('Output folder must be an absolute path (e.g. /Users/yourname/Desktop/folder-sorted).');
+    err.status = 400;
+    throw err;
+  }
+
+  const normalized = path.resolve(trimmed);
+
+  // Refuse root /
+  if (normalized === '/') {
+    const err = new Error('Access denied: cannot write to root directory "/".');
+    err.status = 400;
+    throw err;
+  }
+
+  // Refuse protected system directories: /System, /Library, /usr, /bin, /sbin, /etc, /var, /private, /Applications
+  const FORBIDDEN_ROOTS = [
+    '/System',
+    '/Library',
+    '/usr',
+    '/bin',
+    '/sbin',
+    '/etc',
+    '/var',
+    '/private',
+    '/Applications'
+  ];
+
+  for (const sysDir of FORBIDDEN_ROOTS) {
+    if (isSameOrInside(normalized, sysDir)) {
+      const err = new Error(`Access denied: cannot write to protected system directory "${sysDir}".`);
+      err.status = 400;
+      throw err;
+    }
+  }
+
+  // Refuse anything outside the user's home directory (os.homedir())
+  const home = os.homedir();
+  if (!isSameOrInside(normalized, home)) {
+    const err = new Error(`Access denied: output folder must be inside your home directory (${home}).`);
+    err.status = 400;
+    throw err;
+  }
+
+  // Refuse ~/Library and anything inside it
+  const homeLibrary = path.join(home, 'Library');
+  if (isSameOrInside(normalized, homeLibrary)) {
+    const err = new Error('Access denied: ~/Library is protected.');
+    err.status = 400;
+    throw err;
+  }
+
+  // Refuse hidden directories (any path segment starting with a dot in relative path from home)
+  const relFromHome = path.relative(home, normalized);
+  if (relFromHome) {
+    const segments = relFromHome.split(path.sep);
+    if (segments.some((seg) => seg.startsWith('.'))) {
+      const err = new Error('Access denied: cannot use hidden folders or paths containing hidden directories.');
+      err.status = 400;
+      throw err;
+    }
+  }
+
+  // If path exists, check if it's a directory
+  let resolved = normalized;
+  try {
+    const stat = await fs.promises.stat(normalized);
+    if (!stat.isDirectory()) {
+      const err = new Error(`Output path exists and is not a directory: ${normalized}`);
+      err.status = 400;
+      throw err;
+    }
+    resolved = await fs.promises.realpath(normalized);
+  } catch (err) {
+    if (err.code !== 'ENOENT') {
+      const error = new Error(`Could not inspect output folder: ${err.message}`);
+      error.status = 400;
+      throw error;
+    }
+    // Does not exist yet: find nearest existing parent and resolve symlinks
+    let curr = path.dirname(normalized);
+    while (curr && curr !== path.dirname(curr)) {
+      try {
+        const pStat = await fs.promises.stat(curr);
+        if (pStat.isDirectory()) {
+          const pReal = await fs.promises.realpath(curr);
+          const rel = path.relative(curr, normalized);
+          resolved = path.resolve(pReal, rel);
+          break;
+        }
+      } catch {
+        curr = path.dirname(curr);
+      }
+    }
+  }
+
+  // Refuse if same as source folder or inside it
+  if (isSameOrInside(resolved, sourceResolved)) {
+    const err = new Error('Output folder cannot be the same as or inside the source folder.');
+    err.status = 400;
+    throw err;
+  }
+
+  // Refuse if source folder is inside output folder
+  if (isSameOrInside(sourceResolved, resolved)) {
+    const err = new Error('Output folder cannot contain the source folder.');
+    err.status = 400;
+    throw err;
+  }
+
+  return resolved;
+}
+
+// POST /api/apply - copies approved files into organized output folder (never moves/deletes original files)
+app.post('/api/apply', async (req, res) => {
+  const startTime = Date.now();
+  try {
+    const { folder, outputFolder, items } = req.body || {};
+
+    if (!Array.isArray(items) || items.length === 0) {
+      return res.status(400).json({ ok: false, error: 'No items provided to apply.' });
+    }
+
+    // 1. Re-validate folder with the same safety checks as /api/scan, and re-scan it on the server
+    const scanResult = await validateAndScanFolder(folder);
+    const scannedFilesMap = new Map();
+    for (const f of scanResult.files) {
+      scannedFilesMap.set(f.name, f);
+    }
+
+    // 2. Validate output folder
+    const defaultOutput = `${scanResult.resolved}-sorted`;
+    const targetOutputFolder =
+      outputFolder && typeof outputFolder === 'string' && outputFolder.trim()
+        ? outputFolder.trim()
+        : defaultOutput;
+
+    const validatedOutputFolder = await validateOutputFolder(targetOutputFolder, scanResult.resolved);
+
+    // Ensure output folder directory exists
+    await fs.promises.mkdir(validatedOutputFolder, { recursive: true });
+
+    // 3. Cap an apply at 200 files
+    const itemsToProcess = items.slice(0, 200);
+    const skipped = [];
+    if (items.length > 200) {
+      for (let i = 200; i < items.length; i++) {
+        skipped.push({
+          name: items[i]?.original_name || `item-${i + 1}`,
+          reason: 'Apply limit reached (capped at 200 files per apply)'
+        });
+      }
+    }
+
+    const copiedEntries = [];
+    const createdSubfolders = new Set();
+    const usedDestPaths = new Set();
+
+    for (const item of itemsToProcess) {
+      const origName = item?.original_name;
+      if (!origName || typeof origName !== 'string') {
+        skipped.push({ name: String(origName || 'unknown'), reason: 'Missing original filename' });
+        continue;
+      }
+
+      // Check if found in server scan
+      const scannedFile = scannedFilesMap.get(origName);
+      if (!scannedFile) {
+        skipped.push({ name: origName, reason: 'File not found in folder scan' });
+        continue;
+      }
+
+      // Source path - strictly constructed on the server
+      const sourcePath = path.join(scanResult.resolved, origName);
+
+      // Check with lstat (must be regular file, not a symlink)
+      let lstat;
+      try {
+        lstat = await fs.promises.lstat(sourcePath);
+      } catch (err) {
+        skipped.push({ name: origName, reason: `Could not inspect file: ${err.message}` });
+        continue;
+      }
+
+      if (lstat.isSymbolicLink() || !lstat.isFile()) {
+        skipped.push({ name: origName, reason: 'Not a regular file or is a symlink' });
+        continue;
+      }
+
+      // Check if original's size or modified time changed since scan
+      if (lstat.size !== scannedFile.size || lstat.mtime.toISOString() !== scannedFile.modified) {
+        skipped.push({ name: origName, reason: 'File size or modified time changed since scan' });
+        continue;
+      }
+
+      // Re-sanitise folder
+      const targetFolder = enforceFolder(item.folder);
+      const subFolderDir = path.join(validatedOutputFolder, targetFolder);
+
+      // Re-sanitise suggested_name: lowercase [a-z0-9_-], keep ORIGINAL extension
+      const originalExt = scannedFile.extension;
+      const rawSuggested = item.suggested_name;
+      const parsedSuggested = typeof rawSuggested === 'string' ? path.parse(rawSuggested).name : '';
+      const baseName = sanitizeBaseName(parsedSuggested, path.parse(origName).name);
+      const extLabel = originalExt ? `.${originalExt}` : '';
+
+      // Create sub-folder if needed
+      await fs.promises.mkdir(subFolderDir, { recursive: true });
+      createdSubfolders.add(subFolderDir);
+
+      // Find an available filename in destination (never overwrite, add -2, -3)
+      let uniqueBase = baseName;
+      let candidateFileName = uniqueBase + extLabel;
+      let destPath = path.join(subFolderDir, candidateFileName);
+      let counter = 2;
+
+      while (usedDestPaths.has(destPath.toLowerCase()) || (await pathExists(destPath))) {
+        uniqueBase = `${baseName}-${counter}`;
+        candidateFileName = uniqueBase + extLabel;
+        destPath = path.join(subFolderDir, candidateFileName);
+        counter++;
+      }
+      usedDestPaths.add(destPath.toLowerCase());
+
+      // Copy with COPYFILE_EXCL flag (never overwrite)
+      try {
+        await fs.promises.copyFile(sourcePath, destPath, fs.constants.COPYFILE_EXCL);
+      } catch (err) {
+        skipped.push({ name: origName, reason: `Copy failed: ${err.message}` });
+        continue;
+      }
+
+      // Verify copy size equals original's size
+      try {
+        const copyStat = await fs.promises.stat(destPath);
+        if (copyStat.size !== lstat.size) {
+          // Remove defective copy
+          await fs.promises.unlink(destPath).catch(() => {});
+          skipped.push({ name: origName, reason: 'Copy verification failed: file size mismatch' });
+          continue;
+        }
+
+        // Set copy's modified time to original's with utimes
+        await fs.promises.utimes(destPath, lstat.atime, lstat.mtime);
+
+        copiedEntries.push({
+          source: sourcePath,
+          destination: destPath,
+          size: lstat.size,
+          folder: targetFolder
+        });
+      } catch (err) {
+        await fs.promises.unlink(destPath).catch(() => {});
+        skipped.push({ name: origName, reason: `Post-copy verification failed: ${err.message}` });
+        continue;
+      }
+    }
+
+    // Write undo log to <outputFolder>/.sloth-undo-<timestamp>.json
+    const timestamp = Date.now();
+    const applyId = `${timestamp}-${crypto.randomUUID().slice(0, 8)}`;
+    const undoLogName = `.sloth-undo-${timestamp}.json`;
+    const undoLogPath = path.join(validatedOutputFolder, undoLogName);
+
+    const undoLogData = {
+      applyId,
+      timestamp,
+      sourceFolder: scanResult.resolved,
+      outputFolder: validatedOutputFolder,
+      copies: copiedEntries.map((c) => ({
+        source: c.source,
+        destination: c.destination,
+        size: c.size,
+        source_path: c.source,
+        destination_path: c.destination
+      })),
+      createdSubfolders: Array.from(createdSubfolders)
+    };
+
+    await fs.promises.writeFile(undoLogPath, JSON.stringify(undoLogData, null, 2), 'utf8');
+
+    // Store in memory and persistent index for reliable undo lookup
+    await saveApplyRecord({
+      applyId,
+      undoLogPath,
+      outputFolder: validatedOutputFolder,
+      timestamp
+    });
+
+    const elapsedSeconds = parseFloat(((Date.now() - startTime) / 1000).toFixed(2));
+
+    return res.json({
+      ok: true,
+      applyId,
+      copied: copiedEntries.length,
+      skipped,
+      outputFolder: validatedOutputFolder,
+      seconds: elapsedSeconds
+    });
+  } catch (err) {
+    const status = err.status || 500;
+    return res.status(status).json({
+      ok: false,
+      error: err.message || 'Failed to apply file organization.'
+    });
+  }
+});
+
+// POST /api/undo - reads undo log and removes destination copies (never touches source files)
+app.post('/api/undo', async (req, res) => {
+  try {
+    const { applyId, outputFolder } = req.body || {};
+    if (!applyId || typeof applyId !== 'string') {
+      return res.status(400).json({ ok: false, error: 'applyId is required.' });
+    }
+
+    let undoLogPath = null;
+    let targetOutputFolder = null;
+
+    // 1. Check in-memory record, or reload from persistent index
+    let record = applyRecords.get(applyId.trim());
+    if (!record) {
+      await loadApplyRecords();
+      record = applyRecords.get(applyId.trim());
+    }
+
+    if (record) {
+      undoLogPath = record.undoLogPath;
+      targetOutputFolder = record.outputFolder;
+    } else if (outputFolder && typeof outputFolder === 'string') {
+      // If specified output folder, search in that folder
+      const home = os.homedir();
+      const norm = path.resolve(outputFolder.trim());
+      if (isSameOrInside(norm, home)) {
+        const files = await fs.promises.readdir(norm).catch(() => []);
+        for (const f of files) {
+          if (f.startsWith('.sloth-undo-') && f.endsWith('.json')) {
+            const fullP = path.join(norm, f);
+            try {
+              const content = JSON.parse(await fs.promises.readFile(fullP, 'utf8'));
+              if (content.applyId === applyId.trim()) {
+                undoLogPath = fullP;
+                targetOutputFolder = norm;
+                break;
+              }
+            } catch {}
+          }
+        }
+      }
+    } else if (applyId.endsWith('.json') || path.isAbsolute(applyId)) {
+      const candidate = path.resolve(applyId);
+      if (await pathExists(candidate)) {
+        undoLogPath = candidate;
+        targetOutputFolder = path.dirname(candidate);
+      }
+    }
+
+    if (!undoLogPath || !(await pathExists(undoLogPath))) {
+      return res.status(404).json({ ok: false, error: 'Undo log not found for this apply ID.' });
+    }
+
+    // Read and parse undo log
+    let logData;
+    try {
+      const content = await fs.promises.readFile(undoLogPath, 'utf8');
+      logData = JSON.parse(content);
+    } catch (err) {
+      return res.status(500).json({ ok: false, error: `Could not read undo log: ${err.message}` });
+    }
+
+    // Validate output folder where log was read
+    const home = os.homedir();
+    const validatedOutputFolder = await fs.promises.realpath(targetOutputFolder || path.dirname(undoLogPath));
+    if (!isSameOrInside(validatedOutputFolder, home)) {
+      return res.status(403).json({ ok: false, error: 'Access denied: output folder is outside home directory.' });
+    }
+
+    let removed = 0;
+    const skipped = [];
+    const copies = Array.isArray(logData.copies) ? logData.copies : [];
+
+    // Delete destination copy ONLY if it still exists and its size matches the log
+    for (const entry of copies) {
+      const destPath = entry.destination || entry.destination_path;
+      const srcPath = entry.source || entry.source_path;
+      const fileName = path.basename(destPath);
+
+      // Must be inside validated output folder (never touch source files or files outside output folder)
+      if (!isSameOrInside(destPath, validatedOutputFolder)) {
+        skipped.push({ name: fileName, reason: 'Destination path outside output folder' });
+        continue;
+      }
+
+      // Safeguard: Never touch source files!
+      if (srcPath && path.resolve(destPath) === path.resolve(srcPath)) {
+        skipped.push({ name: fileName, reason: 'Refused: cannot delete source file' });
+        continue;
+      }
+
+      try {
+        const stat = await fs.promises.stat(destPath);
+        if (stat.size !== entry.size) {
+          skipped.push({ name: fileName, reason: 'File size has changed since copy' });
+          continue;
+        }
+
+        await fs.promises.unlink(destPath);
+        removed++;
+      } catch (err) {
+        if (err.code === 'ENOENT') {
+          skipped.push({ name: fileName, reason: 'File no longer exists' });
+        } else {
+          skipped.push({ name: fileName, reason: err.message });
+        }
+      }
+    }
+
+    // Remove any sub-folder that this tool created and that is now empty
+    const subfoldersToCheck = Array.isArray(logData.createdSubfolders)
+      ? logData.createdSubfolders
+      : Array.from(new Set(copies.map((c) => path.dirname(c.destination || c.destination_path))));
+
+    for (const subDir of subfoldersToCheck) {
+      if (isSameOrInside(subDir, validatedOutputFolder) && subDir !== validatedOutputFolder) {
+        try {
+          const contents = await fs.promises.readdir(subDir);
+          if (contents.length === 0) {
+            await fs.promises.rmdir(subDir);
+          }
+        } catch {
+          // Ignore if directory doesn't exist or is not empty
+        }
+      }
+    }
+
+    // Delete the undo log itself
+    await fs.promises.unlink(undoLogPath).catch(() => {});
+    applyRecords.delete(applyId.trim());
+    try {
+      const all = Array.from(applyRecords.values());
+      await fs.promises.writeFile(APPLIES_INDEX_FILE, JSON.stringify(all, null, 2), 'utf8');
+    } catch {}
+
+    return res.json({
+      ok: true,
+      removed,
+      skipped
+    });
+  } catch (err) {
+    const status = err.status || 500;
+    return res.status(status).json({
+      ok: false,
+      error: err.message || 'Failed to undo file organization.'
+    });
+  }
+});
+
 // Periodically clean up old jobs older than 1 hour
 setInterval(() => {
   const oneHourAgo = Date.now() - 3600000;
   for (const [id, job] of proposeJobs.entries()) {
     if (job.createdAt < oneHourAgo) {
       proposeJobs.delete(id);
+    }
+  }
+  for (const [id, rec] of applyRecords.entries()) {
+    if (rec.timestamp < oneHourAgo) {
+      applyRecords.delete(id);
     }
   }
 }, 600000);
